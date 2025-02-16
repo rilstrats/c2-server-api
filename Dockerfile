@@ -3,7 +3,7 @@ FROM cimg/go:1.23.6
 WORKDIR /api
 
 # dependencies
-COPY go.mod .
+COPY go.mod go.sum .
 RUN go mod download
 
 # build

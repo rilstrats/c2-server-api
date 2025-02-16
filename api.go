@@ -1,31 +1,32 @@
 package main
 
 import (
-	"fmt"
+	"database/sql"
 	"log"
 	"net/http"
-	// "net/netip"
+	"os"
 )
 
 type APIServer struct {
-	addr   string
-	port   uint16
-	dbAddr string
-	dbPort uint16
+	addr string
+	db   *sql.DB
 }
 
-func NewAPIServer(addr string, port uint16, dbAddr string, dbPort uint16) *APIServer {
+func GetNewAPIServer() *APIServer {
+	db := GetNewDBServer()
+	addr, present := os.LookupEnv("C2_API_ADDR")
+	if !present {
+		addr = "0.0.0.0:8080"
+	}
 	return &APIServer{
-		addr:   addr,
-		port:   port,
-		dbAddr: dbAddr,
-		dbPort: dbPort,
+		addr: addr,
+		db:   db,
 	}
 }
 
-func (s *APIServer) String() string {
-	return fmt.Sprintf("%s:%d", s.addr, s.port)
-}
+// func (s *APIServer) String() string {
+// 	return fmt.Sprintf("%s:%d", s.addr, s.port)
+// }
 
 func (s *APIServer) Run() error {
 	router := http.NewServeMux()
@@ -49,11 +50,11 @@ func (s *APIServer) Run() error {
 		w.Write([]byte("Post ID Commands: " + id))
 	})
 	server := http.Server{
-		Addr:    s.String(),
+		Addr:    s.addr,
 		Handler: router,
 	}
 
-	log.Printf("Server has started %s", s.String())
+	log.Printf("Server has started %s", s.addr)
 
 	return server.ListenAndServe()
 }

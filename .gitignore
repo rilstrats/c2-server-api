@@ -3,6 +3,7 @@
 
 # custom
 c2-server-api
+secrets
 
 # Binaries for programs and plugins
 *.exe
