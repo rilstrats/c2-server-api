@@ -2,10 +2,12 @@ package main
 
 import (
 	"database/sql"
-	"github.com/go-sql-driver/mysql"
 	"log"
 	"os"
 	"strings"
+	"time"
+
+	"github.com/go-sql-driver/mysql"
 )
 
 func GetNewDBServer() *sql.DB {
@@ -33,8 +35,13 @@ func GetNewDBServer() *sql.DB {
 	}
 
 	pingErr := db.Ping()
-	if pingErr != nil {
-		log.Fatal(pingErr)
+	pingErrCount := 0
+	for pingErr != nil {
+		pingErrCount++
+		time.Sleep(time.Second * 1)
+		if pingErrCount >= 5 {
+			log.Fatal(pingErr)
+		}
 	}
 
 	return db
