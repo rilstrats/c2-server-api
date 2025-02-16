@@ -39,7 +39,7 @@ func GetNewDBServer() *sql.DB {
 	for pingErr != nil {
 		pingErrCount++
 		time.Sleep(time.Second * 1)
-		if pingErrCount >= 5 {
+		if pingErrCount >= 10 {
 			log.Fatal(pingErr)
 		}
 	}
