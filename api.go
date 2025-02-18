@@ -54,7 +54,7 @@ func (s *APIServer) Run() error {
 		Handler: router,
 	}
 
-	log.Printf("Server has started %s", s.addr)
+	log.Printf("API Server ready: %s", s.addr)
 
 	return server.ListenAndServe()
 }
