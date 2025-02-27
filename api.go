@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -9,6 +10,7 @@ import (
 	"math/rand"
 	"net/http"
 	"os"
+	"strconv"
 )
 
 type Beacon struct {
@@ -181,13 +183,57 @@ func (s *APIServer) GetBeaconByID(w http.ResponseWriter, r *http.Request) {
 	w.Write(body)
 }
 
+func (s *APIServer) DeleteBeaconByID(id int32) error {
+	ctx := context.TODO()
+
+	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+	if err != nil {
+		return err
+	}
+
+	_, execErr := tx.Exec(`DELETE FROM beacons WHERE id = ?`, id)
+	if execErr != nil {
+		tx.Rollback()
+	}
+
+	_, execErr = tx.Exec(`DELETE FROM commands WHERE beacon_id = ?`, id)
+	if execErr != nil {
+		tx.Rollback()
+	}
+
+	err = tx.Commit()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (s *APIServer) Run() error {
 	router := http.NewServeMux()
 	router.HandleFunc("POST /register", s.Register)
 	router.HandleFunc("GET /beacon/{id}", s.GetBeaconByID)
 	router.HandleFunc("DELETE /beacon/{id}", func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		w.Write([]byte("Deleted ID: " + id))
+		id64, err := strconv.ParseInt(r.PathValue("id"), 10, 32)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(
+				`{"message": "%s"}`, err.Error()),
+				http.StatusInternalServerError)
+			return
+		}
+
+		id := int32(id64)
+		err = s.DeleteBeaconByID(id)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(
+				`{"message": "%s"}`, err.Error()),
+				http.StatusInternalServerError)
+			return
+		}
+
+		w.Write(fmt.Appendf(nil,
+			`{"message": "successfully deleted %d}`,
+			id))
 	})
 	router.HandleFunc("GET /beacon/{id}/commands", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
