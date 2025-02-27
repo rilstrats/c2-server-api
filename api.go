@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -187,7 +188,32 @@ func (s *APIServer) Run() error {
 	router.HandleFunc("GET /beacon/{id}", s.GetBeaconByID)
 	router.HandleFunc("DELETE /beacon/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
-		w.Write([]byte("Deleted ID: " + id))
+		ctx := context.TODO()
+		tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+		if err != nil {
+			http.Error(w, fmt.Sprintf(
+				`{"message": "%s"}`, err.Error()),
+				http.StatusInternalServerError)
+			return
+		}
+		_, execErr := tx.Exec(`DELETE FROM beacons WHERE id = ?`, id)
+		if execErr != nil {
+			tx.Rollback()
+		}
+		_, execErr = tx.Exec(`DELETE FROM commands WHERE beacon_id = ?`, id)
+		if execErr != nil {
+			tx.Rollback()
+		}
+		err = tx.Commit()
+		if err != nil {
+			http.Error(w, fmt.Sprintf(
+				`{"message": "%s"}`, err.Error()),
+				http.StatusInternalServerError)
+			return
+		}
+		w.Write(fmt.Appendf(nil,
+			`{"message": "successfully deleted %s}`,
+			id))
 	})
 	router.HandleFunc("GET /beacon/{id}/commands", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
