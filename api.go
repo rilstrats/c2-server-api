@@ -79,55 +79,26 @@ func (s *APIServer) GenerateUniqueBeaconID() (int32, error) {
 	return id, nil
 }
 
-func (s *APIServer) Register(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Content-Type", "application/json")
-
-	defer r.Body.Close()
-	rBody, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, `{"message": "no request body"}`, http.StatusInternalServerError)
-		return
-	}
-
-	beaconData := Beacon{}
-	err = json.Unmarshal(rBody, &beaconData)
-	if err != nil {
-		http.Error(w, fmt.Sprintf(
-			`{"message": "%s"}`, err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-
+func (s *APIServer) Register(beacon Beacon) (int32, error) {
 	id, err := s.GenerateUniqueBeaconID()
 	if err != nil {
-		http.Error(w, fmt.Sprintf(
-			`{"message": "%s"}`, err.Error()),
-			http.StatusInternalServerError)
-		return
+		return -1, err
 	}
 
 	_, err = s.db.Exec(
 		"INSERT INTO beacons VALUES (?, ?, ?)",
 		id,
-		beaconData.IP,
-		beaconData.Hostname,
+		beacon.IP,
+		beacon.Hostname,
 	)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(
-			`{"message": "%s"}`, err.Error()),
-			http.StatusInternalServerError)
-		return
+		return -1, err
 	}
 
-	w.Write(fmt.Appendf(nil,
-		`{"message": "successfully registered",
-		"id": %d}`,
-		id))
+	return id, nil
 }
 
-func (s *APIServer) GetBeaconByID(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	w.Header().Add("Content-Type", "application/json")
+func (s *APIServer) GetBeaconByID(id int32) (Beacon, error) {
 
 	row := s.db.QueryRow(
 		`SELECT ip, hostname 
@@ -135,13 +106,11 @@ func (s *APIServer) GetBeaconByID(w http.ResponseWriter, r *http.Request) {
 		WHERE id = ?;`,
 		id,
 	)
+
 	beacon := Beacon{}
 	err := row.Scan(&beacon.IP, &beacon.Hostname)
 	if err != nil {
-		http.Error(w, fmt.Sprintf(
-			`{"message": "beacon failure: %s"}`, err.Error()),
-			http.StatusInternalServerError)
-		return
+		return Beacon{}, err
 	}
 
 	rows, err := s.db.Query(
@@ -151,19 +120,14 @@ func (s *APIServer) GetBeaconByID(w http.ResponseWriter, r *http.Request) {
 		ORDER BY create_time;`,
 		id,
 	)
+
 	if err != nil {
-		http.Error(w, fmt.Sprintf(
-			`{"message": "%s"}`, err.Error()),
-			http.StatusInternalServerError)
-		return
+		return Beacon{}, err
 	}
 	for {
 		anotherRow := rows.Next()
 		if !anotherRow && rows.Err() != nil {
-			http.Error(w, fmt.Sprintf(
-				`{"message": "command failure: %s"}`, rows.Err().Error()),
-				http.StatusInternalServerError)
-			return
+			return Beacon{}, err
 
 		} else if !anotherRow {
 			break
@@ -173,14 +137,7 @@ func (s *APIServer) GetBeaconByID(w http.ResponseWriter, r *http.Request) {
 		beacon.Commands = append(beacon.Commands, c)
 	}
 
-	body, err := json.Marshal(beacon)
-	if err != nil {
-		http.Error(w, fmt.Sprintf(
-			`{"message": "%s"}`, err.Error()),
-			http.StatusInternalServerError)
-		return
-	}
-	w.Write(body)
+	return beacon, nil
 }
 
 func (s *APIServer) DeleteBeaconByID(id int32) error {
@@ -211,9 +168,73 @@ func (s *APIServer) DeleteBeaconByID(id int32) error {
 
 func (s *APIServer) Run() error {
 	router := http.NewServeMux()
-	router.HandleFunc("POST /register", s.Register)
-	router.HandleFunc("GET /beacon/{id}", s.GetBeaconByID)
+
+	router.HandleFunc("POST /register", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Content-Type", "application/json")
+
+		defer r.Body.Close()
+		rBody, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w,
+				`{"msg": "no request body"}`,
+				http.StatusInternalServerError)
+			return
+		}
+
+		beacon := Beacon{}
+		err = json.Unmarshal(rBody, &beacon)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(
+				`{"msg": "%s"}`, err.Error()),
+				http.StatusInternalServerError)
+			return
+		}
+
+		id, err := s.Register(beacon)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(
+				`{"msg": "%s"}`, err.Error()),
+				http.StatusInternalServerError)
+			return
+		}
+
+		w.Write(fmt.Appendf(nil,
+			`{"msg": "successfully registered",
+			"id": %d}`,
+			id))
+	})
+
+	router.HandleFunc("GET /beacon/{id}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Content-Type", "application/json")
+		id64, err := strconv.ParseInt(r.PathValue("id"), 10, 32)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(
+				`{"msg": "%s"}`, err.Error()),
+				http.StatusInternalServerError)
+			return
+		}
+
+		id := int32(id64)
+		beacon, err := s.GetBeaconByID(id)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(
+				`{"msg": "%s"}`, err.Error()),
+				http.StatusInternalServerError)
+			return
+		}
+
+		body, err := json.Marshal(beacon)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(
+				`{"msg": "%s"}`, err.Error()),
+				http.StatusInternalServerError)
+			return
+		}
+		w.Write(body)
+	})
+
 	router.HandleFunc("DELETE /beacon/{id}", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Content-Type", "application/json")
 		id64, err := strconv.ParseInt(r.PathValue("id"), 10, 32)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(
@@ -226,15 +247,14 @@ func (s *APIServer) Run() error {
 		err = s.DeleteBeaconByID(id)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(
-				`{"message": "%s"}`, err.Error()),
+				`{"msg": "%s"}`, err.Error()),
 				http.StatusInternalServerError)
 			return
 		}
 
-		w.Write(fmt.Appendf(nil,
-			`{"message": "successfully deleted %d}`,
-			id))
+		w.Write(fmt.Appendf(nil, `{"msg": "successfully deleted %d}`, id))
 	})
+
 	router.HandleFunc("GET /beacon/{id}/commands", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 		w.Write([]byte("Got ID Commands: " + id))
