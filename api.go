@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -89,7 +88,8 @@ func (s *APIServer) Register(beacon Beacon) (int32, error) {
 	}
 
 	_, err = s.db.Exec(
-		"INSERT INTO beacons VALUES (?, ?, ?)",
+		`INSERT INTO beacons (id, ip, hostname)
+		VALUES (?, ?, ?)`,
 		id,
 		beacon.IP,
 		beacon.Hostname,
@@ -169,10 +169,8 @@ func (s *APIServer) MarkCommandsExecuted(beacon_id int32) error {
 	return nil
 }
 
-func (s *APIServer) DeleteBeaconByID(id int32) error {
-	ctx := context.TODO()
-
-	tx, err := s.db.BeginTx(ctx, &sql.TxOptions{})
+func (s *APIServer) DeleteBeacon(id int32) error {
+	tx, err := s.db.Begin()
 	if err != nil {
 		return err
 	}
@@ -273,7 +271,7 @@ func (s *APIServer) Run() error {
 		}
 
 		id := int32(id64)
-		err = s.DeleteBeaconByID(id)
+		err = s.DeleteBeacon(id)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(
 				`{"msg": "%s"}`, err.Error()),
