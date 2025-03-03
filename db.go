@@ -51,6 +51,6 @@ func GetNewDBServer() *sql.DB {
 	}
 	// log.Print("Pinged DB")
 
-	log.Printf("DB server ready: %s", addr)
+	log.Printf("DB connection ready: %s", addr)
 	return db
 }
