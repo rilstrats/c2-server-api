@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -81,7 +82,7 @@ func (s *APIServer) GenerateUniqueBeaconID() (int32, error) {
 	return id, nil
 }
 
-func (s *APIServer) Register(beacon Beacon) (int32, error) {
+func (s *APIServer) RegisterBeacon(beacon Beacon) (int32, error) {
 	id, err := s.GenerateUniqueBeaconID()
 	if err != nil {
 		return -1, err
@@ -158,7 +159,7 @@ func (s *APIServer) GetCommands(beacon_id int32) ([]Command, error) {
 func (s *APIServer) MarkCommandsExecuted(beacon_id int32) error {
 	_, err := s.db.Exec(`
 		UPDATE commands
-		SET seen_by_beacon = 1
+		SET executed = 1
 		WHERE beacon_id = ?;
 		`, beacon_id)
 
@@ -175,14 +176,16 @@ func (s *APIServer) DeleteBeacon(id int32) error {
 		return err
 	}
 
-	_, execErr := tx.Exec(`DELETE FROM beacons WHERE id = ?`, id)
+	_, execErr := tx.Exec(`DELETE FROM commands WHERE beacon_id = ?`, id)
 	if execErr != nil {
 		tx.Rollback()
+		return execErr
 	}
 
-	_, execErr = tx.Exec(`DELETE FROM commands WHERE beacon_id = ?`, id)
+	_, execErr = tx.Exec(`DELETE FROM beacons WHERE id = ?`, id)
 	if execErr != nil {
 		tx.Rollback()
+		return execErr
 	}
 
 	err = tx.Commit()
@@ -193,10 +196,35 @@ func (s *APIServer) DeleteBeacon(id int32) error {
 	return nil
 }
 
+func (s *APIServer) RegisterCommand(command Command) error {
+	exists, err := s.CheckBeaconIDExistence(command.BeaconID)
+	if err != nil {
+		return err
+	}
+
+	if !exists {
+		return errors.New(fmt.Sprintf("Beacon ID %d doesn't exist", command.BeaconID))
+	}
+
+	_, err = s.db.Exec(
+		`INSERT INTO commands (beacon_id, c_type, c_arg)
+		VALUES (?, ?, ?)`,
+		command.BeaconID,
+		command.Type,
+		command.Arg,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+
+}
+
 func (s *APIServer) Run() error {
 	router := http.NewServeMux()
 
-	router.HandleFunc("POST /register", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("POST /register-beacon", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Content-Type", "application/json")
 
 		defer r.Body.Close()
@@ -217,7 +245,7 @@ func (s *APIServer) Run() error {
 			return
 		}
 
-		id, err := s.Register(beacon)
+		id, err := s.RegisterBeacon(beacon)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(
 				`{"msg": "%s"}`, err.Error()),
@@ -265,7 +293,7 @@ func (s *APIServer) Run() error {
 		id64, err := strconv.ParseInt(r.PathValue("id"), 10, 32)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(
-				`{"message": "%s"}`, err.Error()),
+				`{"msg": "%s"}`, err.Error()),
 				http.StatusInternalServerError)
 			return
 		}
@@ -287,7 +315,7 @@ func (s *APIServer) Run() error {
 		id64, err := strconv.ParseInt(r.PathValue("id"), 10, 32)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(
-				`{"message": "%s"}`, err.Error()),
+				`{"msg": "%s"}`, err.Error()),
 				http.StatusInternalServerError)
 			return
 		}
@@ -296,7 +324,7 @@ func (s *APIServer) Run() error {
 		commands, err := s.GetCommands(id)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(
-				`{"message": "%s"}`, err.Error()),
+				`{"msg": "%s"}`, err.Error()),
 				http.StatusInternalServerError)
 			return
 		}
@@ -315,10 +343,41 @@ func (s *APIServer) Run() error {
 		w.Write(body)
 	})
 
-	router.HandleFunc("POST /beacon/{id}/commands", func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		w.Write([]byte("Post ID Commands: " + id))
+	router.HandleFunc("POST /register-command", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Add("Content-Type", "application/json")
+
+		defer r.Body.Close()
+		rBody, err := io.ReadAll(r.Body)
+		if err != nil {
+			http.Error(w,
+				`{"msg": "no request body"}`,
+				http.StatusInternalServerError)
+			return
+		}
+
+		command := Command{}
+		err = json.Unmarshal(rBody, &command)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(
+				`{"msg": "%s"}`, err.Error()),
+				http.StatusInternalServerError)
+			return
+		}
+
+		err = s.RegisterCommand(command)
+		if err != nil {
+			http.Error(w, fmt.Sprintf(
+				`{"msg": "%s"}`, err.Error()),
+				http.StatusInternalServerError)
+			return
+		}
+
+		w.Write(fmt.Appendf(nil,
+			`{"msg": "successfully added command",
+			"id": %d}`,
+			command.ID))
 	})
+
 	server := http.Server{
 		Addr:    s.addr,
 		Handler: router,

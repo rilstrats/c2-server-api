@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 )
 
 func TestIntegration(t *testing.T) {
@@ -12,7 +13,7 @@ func TestIntegration(t *testing.T) {
 		Hostname: "test1",
 	}
 
-	id, err := s.Register(beaconCreate)
+	id, err := s.RegisterBeacon(beaconCreate)
 	if err != nil {
 		t.Errorf("Register(beacon) failed: %s", err.Error())
 		return
@@ -35,7 +36,7 @@ func TestIntegration(t *testing.T) {
 		return
 	}
 	if exists {
-		t.Errorf("CheckBeaconIDExistence(%d) founded an ID that doesn't exist", fakeID)
+		t.Errorf("CheckBeaconIDExistence(%d) found an ID that doesn't exist", fakeID)
 		return
 	}
 
@@ -50,15 +51,74 @@ func TestIntegration(t *testing.T) {
 		return
 	}
 
-	// s.AddCommand()
+	commandWebshellCreate := Command{BeaconID: id, Type: "webshell"}
+	err = s.RegisterCommand(commandWebshellCreate)
+	if err != nil {
+		t.Errorf("RegisterCommand(webshell) failed: %s", err.Error())
+		return
+	}
+	time.Sleep(time.Millisecond * 100)
+	commandRevshellCreate := Command{BeaconID: id, Type: "revshell", Arg: "10.0.0.1"}
+	err = s.RegisterCommand(commandRevshellCreate)
+	if err != nil {
+		t.Errorf("RegisterCommand(revshell) failed: %s", err.Error())
+		return
+	}
+	time.Sleep(time.Millisecond * 100)
+	commandRunCreate := Command{BeaconID: id, Type: "run", Arg: "whoami"}
+	err = s.RegisterCommand(commandRunCreate)
+	if err != nil {
+		t.Errorf("RegisterCommand(run) failed: %s", err.Error())
+		return
+	}
+	coms, err := s.GetCommands(id)
+	if err != nil {
+		t.Errorf("GetCommands(%d) failed: %s", id, err.Error())
+		return
+	}
+	if coms[0].Type != "webshell" || coms[1].Type != "revshell" || coms[2].Type != "run" {
+		t.Errorf("Commands weren't returned in chronological order")
+		return
+	}
 
-	// s.GetCommands()
+	err = s.MarkCommandsExecuted(id)
+	if err != nil {
+		t.Errorf("MarkCommandsExecuted(%d) failed: %s", id, err.Error())
+		return
+	}
+	coms, err = s.GetCommands(id)
+	if err != nil {
+		t.Errorf("GetCommands(%d) failed: %s", id, err.Error())
+		return
+	}
+	if !coms[0].Executed || !coms[1].Executed || !coms[2].Executed {
+		t.Errorf("Commands weren't marked as executed")
+		return
+	}
 
-	// s.MarkCommandsExecuted()
+	beaconFinal, err := s.GetBeacon(id)
+	if err != nil {
+		t.Errorf("GetBeacon(%d) failed: %s", id, err.Error())
+		return
+	}
+	if len(beaconFinal.Commands) != 3 {
+		t.Errorf("Commands weren't added to beacon")
+		return
+	}
 
 	err = s.DeleteBeacon(id)
 	if err != nil {
 		t.Errorf("DeleteBeacon(%d) failed: %s", id, err.Error())
+		return
+	}
+
+	exists, err = s.CheckBeaconIDExistence(id)
+	if err != nil {
+		t.Errorf("CheckBeaconIDExistence(%d) failed: %s", id, err.Error())
+		return
+	}
+	if exists {
+		t.Errorf("CheckBeaconIDExistence(%d) found an ID that was deleted", id)
 		return
 	}
 }
