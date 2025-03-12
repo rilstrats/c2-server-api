@@ -9,8 +9,8 @@ func TestIntegration(t *testing.T) {
 	s := GetNewAPIServer()
 
 	beaconCreate := Beacon{
-		IP:       "192.168.1.1",
-		Hostname: "test1",
+		IP:       "10.10.10.10",
+		Hostname: "test-random",
 	}
 
 	id, err := s.RegisterBeacon(beaconCreate)
