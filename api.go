@@ -166,20 +166,6 @@ func (s *APIServer) GetCommands(beaconID int32, unexecutedOnly bool) ([]Command,
 	return commands, nil
 }
 
-func (s *APIServer) MarkCommandsExecuted(beaconID int32) error {
-	_, err := s.db.Exec(`
-		UPDATE commands
-		SET executed = 1
-		WHERE beacon_id = ?;
-		`, beaconID)
-
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (s *APIServer) MarkCommandExecuted(commandID int32, result string) error {
 	_, err := s.db.Exec(`
 		UPDATE commands
