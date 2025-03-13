@@ -71,7 +71,7 @@ func TestIntegration(t *testing.T) {
 		t.Errorf("RegisterCommand(run) failed: %s", err.Error())
 		return
 	}
-	coms, err := s.GetCommands(id)
+	coms, err := s.GetCommands(id, false)
 	if err != nil {
 		t.Errorf("GetCommands(%d) failed: %s", id, err.Error())
 		return
@@ -81,12 +81,16 @@ func TestIntegration(t *testing.T) {
 		return
 	}
 
-	err = s.MarkCommandsExecuted(id)
-	if err != nil {
-		t.Errorf("MarkCommandsExecuted(%d) failed: %s", id, err.Error())
-		return
-	}
-	coms, err = s.GetCommands(id)
+	// err = s.MarkCommandsExecuted(id)
+	// if err != nil {
+	// 	t.Errorf("MarkCommandsExecuted(%d) failed: %s", id, err.Error())
+	// 	return
+	// }
+	err = s.MarkCommandExecuted(coms[0].ID, "revshell created")
+	err = s.MarkCommandExecuted(coms[1].ID, "webshell created")
+	err = s.MarkCommandExecuted(coms[2].ID, "whoami executed")
+
+	coms, err = s.GetCommands(id, false)
 	if err != nil {
 		t.Errorf("GetCommands(%d) failed: %s", id, err.Error())
 		return
