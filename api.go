@@ -126,9 +126,9 @@ func (s *APIServer) GetBeacon(beaconID int32) (Beacon, error) {
 	return beacon, nil
 }
 
-func (s *APIServer) GetCommands(beaconID int32, unexecutedOnly bool) ([]Command, error) {
+func (s *APIServer) GetCommands(beaconID int32, unexecOnly bool) ([]Command, error) {
 	var query string
-	if unexecutedOnly {
+	if unexecOnly {
 		query = `SELECT id, beacon_id,
 		c_type, c_arg, executed, result
 		FROM commands
@@ -332,12 +332,12 @@ func (s *APIServer) Run() error {
 		}
 		beaconID := int32(id64)
 
-		unexecuted_only := false
-		if r.URL.Query().Get("unexecuted_only") == "true" {
-			unexecuted_only = true
+		unexecOnly := false
+		if r.URL.Query().Get("unexec_only") == "true" {
+			unexecOnly = true
 		}
 
-		commands, err := s.GetCommands(beaconID, unexecuted_only)
+		commands, err := s.GetCommands(beaconID, unexecOnly)
 		if err != nil {
 			http.Error(w, fmt.Sprintf(
 				`{"msg": "%s"}`, err.Error()),
