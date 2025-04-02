@@ -385,22 +385,23 @@ func (s *APIServer) Run() error {
 		}
 
 		w.Write(fmt.Appendf(nil,
-			`{"msg": "successfully added command",
-			"id": %d}`,
-			command.ID))
+			`{"msg": "successfully added command"}`,
+			// "id": %d}`,
+			// command.ID,
+		))
 	})
 
-	router.HandleFunc("POST /command/{id}/executed", func(w http.ResponseWriter, r *http.Request) {
+	router.HandleFunc("POST /command/execute", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Add("Content-Type", "application/json")
 
-		id64, err := strconv.ParseInt(r.PathValue("id"), 10, 32)
-		if err != nil {
-			http.Error(w, fmt.Sprintf(
-				`{"msg": "%s"}`, err.Error()),
-				http.StatusInternalServerError)
-			return
-		}
-		commandID := int32(id64)
+		// id64, err := strconv.ParseInt(r.PathValue("id"), 10, 32)
+		// if err != nil {
+		// 	http.Error(w, fmt.Sprintf(
+		// 		`{"msg": "%s"}`, err.Error()),
+		// 		http.StatusInternalServerError)
+		// 	return
+		// }
+		// commandID := int32(id64)
 
 		defer r.Body.Close()
 		rBody, err := io.ReadAll(r.Body)
@@ -420,7 +421,7 @@ func (s *APIServer) Run() error {
 			return
 		}
 
-		s.MarkCommandExecuted(commandID, command.Result)
+		s.MarkCommandExecuted(command.ID, command.Result)
 
 		w.Write(fmt.Appendf(nil,
 			`{"msg": "marked command as executed", "id": %d}`,
